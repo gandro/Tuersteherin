@@ -12,12 +12,28 @@ class Tuersteherin {
     const Server   = "irc.euirc.net";
     const Port     = 6667;
     const Channels = '#whf';
-    
+
     const IdleTimeout = 0;
    
     private $LoggedIn = array();
     private $idleTime = array();
     private $UserUIDs = array();
+
+    private $simpleKeywords = array(
+        'eudar' => 'eudaR :o!',
+        'metal' => 'metal \m/ :o',
+        'hitler' => 'Commodore-Freak !_! *highlight* euda :>',
+        'bier' => 'biertitten :>',
+        'dagegen' => 'Ich bin für Kicken! :o'
+    );
+
+    private $searchEngines = array(
+        'google' => 'http://www.google.de/search?q=',
+        'googlepic' => 'http://www.google.de/images?q=',
+        'lmgtfy' => 'http://lmgtfy.com/?q=',
+        'wikipedia' => 'http://de.wikipedia.org/w/index.php?title=Spezial:Suche&search=',
+        'whfsearch' => 'http://www.winhistory-forum.net/search.php?do=process&q='
+    );
 
     function Tuersteherin() {
         $irc = $this->SmartIRC = &new Net_SmartIRC();
@@ -27,28 +43,35 @@ class Tuersteherin {
         $irc->setAutoReconnect(true);
         $irc->setDebug(SMARTIRC_DEBUG_ALL);
 
-        setlocale (LC_ALL, 'de_DE');
-        
+        setlocale(LC_ALL, 'de_DE');
+
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '.*', $this, 'updateIdle');
         $irc->registerActionhandler(SMARTIRC_TYPE_NICKCHANGE, '.*', $this, 'updateUUID');
+        $irc->registerActionhandler(SMARTIRC_TYPE_WHO, '.*', $this, 'setUUID');
         $irc->registerActionhandler(SMARTIRC_TYPE_QUIT, '.*', $this, 'removeUUID');
 
 
         $irc->registerActionhandler(SMARTIRC_TYPE_QUERY, '^!login', $this, 'login');
         $irc->registerActionhandler(SMARTIRC_TYPE_QUERY, '^!logout$', $this, 'logout');
         $irc->registerActionhandler(SMARTIRC_TYPE_QUERY, '^!admins$', $this, 'admins');
-        $irc->registerActionhandler(SMARTIRC_TYPE_QUIT, '.*', $this, 'logout');       
+        $irc->registerActionhandler(SMARTIRC_TYPE_QUIT, '.*', $this, 'logout');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!kick\s.+', $this, 'kick');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!kickban\s.+', $this, 'kickban');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!whois\s.+', $this, 'whois');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!quit$', $this, 'quit');
-        
-        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '/^.+\s'.self::Nickname.'$/i', $this, 'Selber');
+
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '/^(hallo|huhu|hi)\s'.self::Nickname.'/i', $this, 'Huhu');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!toblerone(\s|$)', $this, 'Toblerone');
-        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!say(\s|$)', $this, 'Say');
-        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!sayme(\s|$)', $this, 'SayMe');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!say\s', $this, 'Say');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!sayme\s', $this, 'SayMe');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!popp\s', $this, 'Popp');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!dice(\s\d|$)', $this, 'Dice');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!?ping(\?|!|\.)?$', $this, 'Ping');
-        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^euda$', $this, 'Euda');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '/[-+]?[0-9]*[.,]?[0-9]+\s?chf/i', $this, 'CHFtoEUR');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!(time|date)(\s|$)', $this, 'Time');
 
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '.*', $this, 'simpleKeywords');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '!.+\s', $this, 'searchEngine');
 
         $irc->connect(self::Server, self::Port);
         $irc->login(self::Nickname, self::Realname);
@@ -63,7 +86,7 @@ class Tuersteherin {
     }
 
     function updateIdle(&$irc, &$ircdata) {
-        $uuid = $ircdata->ident.'@'.$ircdata->host;
+        $uuid = $this->createUUID($ircdata);
 
         if(!isset($this->UserUIDs[$uuid])) {
             $this->UserUIDs[$uuid] = $ircdata->nick;
@@ -105,31 +128,26 @@ class Tuersteherin {
             }
 
             if(count($idleList) > 0) {
-                $irc->mode($channel, '-'.str_repeat('v', count($idleList)).
-                            ' '.implode(' ', $idleList));
+                $irc->mode($channel, '-'.str_repeat('v', count($idleList)).' '.implode(' ', $idleList));
             }
         }
-
-/*
-        foreach($this->idleTime as $channel=>$userdata) {
-            foreach($userdata as $uuid=>$timestamps) {
-                if(microtime(true) - $timestamps[0] > self::IdleTimeout) {
-                    if($irc->isVoiced($channel, $this->getNickname($uuid))) {
-                        $irc->devoice($channel, $this->getNickname($uuid));
-                    }
-                }
-            }
-        }
-*/
     }
 
     function updateUUID(&$irc, &$ircdata) {
-        $uuid = $ircdata->ident.'@'.$ircdata->host;
+        $uuid = $this->createUUID($ircdata);
         $this->UserUIDs[$uuid] = $ircdata->message;
     }
-    
-    function removeUUID(&$irc, &$ircdata) {
-        $uuid = $ircdata->ident.'@'.$ircdata->host;
+
+    function setUUID(&$irc, &$ircdata) { 
+        $raw_msg = &$ircdata->rawmessageex;
+        if($raw_msg[1] == SMARTIRC_RPL_WHOREPLY) {
+            $uuid = $raw_msg[4].'@'.$raw_msg[5];
+            $this->UserUIDs[$uuid] = $raw_msg[7];
+        }
+    }
+
+    function removeUUID(&$irc, &$ircdata) { 
+        $uuid = $this->createUUID($ircdata);
         unset($this->UserUIDs[$uuid]);
         foreach($this->idleTime as $channel=>$user) {
             unset($this->idleTime[$channel][$uuid]);
@@ -139,21 +157,51 @@ class Tuersteherin {
     function getNickname($uuid) {
         return $this->UserUIDs[$uuid];
     }
-    
+
     function getUUID($nickname) {
         return array_search($nickname, $this->UserUIDs);
     }
 
+    function createUUID(&$ircdata) {
+        return $ircdata->ident.'@'.$ircdata->host;
+    }
+
     function quit(&$irc, &$ircdata) {
-        if($this->checkLogin($ircdata->host)) {
+        if($this->checkLogin($ircdata->nick)) {
             $irc->quit("Heil Diskordia!");
-        } elseif($irc->isOpped($ircdata->channel)) {
-            $irc->kick($ircdata->channel, $ircdata->nick, "WUTSCHNAUBZETTER");
-        } else {
-            $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, "WUTSCHNAUBZETTER");
         }
     }
-    
+
+    function whois(&$irc, &$ircdata) {
+        $uuid = $this->getUUID($ircdata->messageex[1]);
+        if($irc->isMe($ircdata->messageex[1])) {
+            $msg = "Das bin ich selber.";
+        } elseif($uuid === false) {
+            $msg = "Fehler: Unbekannter Benutzer";
+        } else {
+            $msg = $uuid;
+        }
+        $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, $msg);
+    }
+
+    function kickban(&$irc, &$ircdata) {
+        $this->kick($irc, $ircdata, true);
+    }
+
+    function kick(&$irc, &$ircdata, $kickban = false) {
+        if($irc->isOpped($ircdata->channel)) {
+            $user = $ircdata->messageex[1];
+            if($this->checkLogin($ircdata->nick)) {
+                if($kickban && ($uuid = $this->getUUID($user)) !== false) {
+                    $irc->ban($ircdata->channel, '*!'.$uuid);
+                }
+                $irc->kick($ircdata->channel, $user, "WUTSCHNAUBZETTER");
+            } else {
+                $irc->kick($ircdata->channel, $ircdata->nick, "Du hast mir gar nichts zu sagen.");
+            }
+        }
+    }
+
     function login(&$irc, &$ircdata) {
         if(!isset($ircdata->messageex[2])) return;
         $user = $ircdata->messageex[1];
@@ -161,37 +209,37 @@ class Tuersteherin {
         $Admins = parse_ini_file("Admins.txt");
         
         if(isset($Admins[$user]) && sha1($pass) == $Admins[$user]) {
-            $this->LoggedIn[$ircdata->host] = true;
+            $uuid = $this->createUUID($ircdata);
+            $this->LoggedIn[$uuid] = true;
             $irc->message(SMARTIRC_TYPE_QUERY, $ircdata->nick, "Logged in");
         }
     }
-    
-    function checkLogin($host) {
-        return isset($this->LoggedIn[$host]) ? $this->LoggedIn[$host] : false;
+
+    function checkLogin($nick) {
+        $uuid = $this->getUUID($nick);
+        return isset($this->LoggedIn[$uuid]) ? $this->LoggedIn[$uuid] : false;
     }
 
     
     function admins(&$irc, &$ircdata) {
         if(!$this->checkLogin($ircdata->nick)) return;
         $irc->message(SMARTIRC_TYPE_QUERY, $ircdata->nick, "Logged in admins:");
-        foreach($this->LoggedIn as $host=>$loggedin) {
+        foreach($this->LoggedIn as $uuid=>$loggedin) {
             if($loggedin) {
-                $irc->message(SMARTIRC_TYPE_QUERY, $ircdata->nick, $this->getNickname($host));
+                $irc->message(SMARTIRC_TYPE_QUERY, $ircdata->nick, $this->getNickname($uuid));
             }
         }
     }
     
-    function logout(&$irc, &$ircdata) {
-        if($this->checkLogin($ircdata->host)) {
+    function logout(&$irc, &$ircdata) { //FIXME funktioniert nicht bei quit
+        if($this->checkLogin($ircdata->nick)) {
             unset($this->LoggedIn[$ircdata->nick]);
             $irc->message(SMARTIRC_TYPE_QUERY, $ircdata->nick, "Logged out");
         }
     }
 
-    function Selber(&$irc, &$ircdata) {
-
-        preg_match("/^(?<selber>.+)\s".self::Nickname."$/i", $ircdata->message, $msg);
-        $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, $msg['selber'].' '.$ircdata->nick);
+    function Huhu(&$irc, &$ircdata) {
+        $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, $ircdata->messageex[0].' '.$ircdata->nick);
     }
     
     function Toblerone(&$irc, &$ircdata) {
@@ -200,15 +248,26 @@ class Tuersteherin {
     }
 
     function Say(&$irc, &$ircdata) {
-        $message = $this->_message_line($ircdata->message, "Ich sag nichts! :o");
+        $message = $this->_message_line($ircdata->message);
         $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, $message);
     }
 
     function SayMe(&$irc, &$ircdata) {
-        $message = $this->_message_line($ircdata->message, "Ich mach nichts! :o");
+        $message = $this->_message_line($ircdata->message);
         $irc->message(SMARTIRC_TYPE_ACTION, $ircdata->channel, $message);
     }
-    
+
+    function Popp(&$irc, &$ircdata) {
+        $nick = $this->_message_line($ircdata->message);
+        $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, '*'.$nick.' anpopp* :o');
+    }
+
+    function Dice(&$irc, &$ircdata) {
+        $max = isset($ircdata->messageex[1]) ? $ircdata->messageex[1] : 6;
+        $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, '*wuerfel*');
+        $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, rand(1, $max));
+    }
+
     function Ping(&$irc, &$ircdata) {
         $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, 'Pong!');
     }
@@ -220,12 +279,22 @@ class Tuersteherin {
         );
     }
 
-    function Euda(&$irc, &$ircdata) {
-        if(rand(0, 1)) {
-            $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, 'eudaR :o!');
+    function simpleKeywords(&$irc, &$ircdata) {
+        foreach($this->simpleKeywords as $keyword => $answer) {
+            if(preg_match('/(^|\b)'.$keyword.'(\b|$)/i', $ircdata->message)) {
+                $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, $answer);
+            }
         }
     }
-    
+
+    function searchEngine(&$irc, &$ircdata) {
+        if(isset($this->searchEngines['!'.$ircdata->messageex[0]])) {
+            $query = $this->searchEngines['!'.$ircdata->messageex[0]].
+                                urlencode($this->_message_line($ircdata->message));
+            $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, '-> '.$query);
+        }
+    } 
+
     function CHFtoEUR(&$irc, &$ircdata) {
         preg_match("/(?<value>[-+]?[0-9]*[.,]?[0-9]+)\s?chf/i", $ircdata->message, $value);
         $chf = strtr($value['value'], ',', '.');
@@ -242,10 +311,9 @@ class Tuersteherin {
             $eur = $chf * 0.66; /* leider existiert kein offizieller Durchschnitt */
             $msg = $chf.' CHF sind ungefaehr '.number_format($eur, 2, ',', '.').' EUR';
         }
-        
         $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, $msg);
     }
-    
+
     function _message_line($message, $fallback = '') {
         @list($cmd, $line) = explode(' ', $message, 2);
         $line = (is_null($line)) ? $fallback : $line;
