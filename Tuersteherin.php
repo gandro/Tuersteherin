@@ -2,6 +2,11 @@
 <?php
 include("SmartIRC.php");
 
+define("IRC_UNDERLINE", "\001");
+define("IRC_BOLD", "\002");
+define("IRC_ITALIC", "\026");
+define("IRC_NORMAL", "\017");
+
 class Tuersteherin {
 
     private $SmartIRC;
@@ -62,6 +67,7 @@ class Tuersteherin {
 
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '/^(hallo|huhu|hi)\s'.self::Nickname.'/i', $this, 'Huhu');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!toblerone(\s|$)', $this, 'Toblerone');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!8ball[1]?(\s|$)', $this, 'EightBall');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!say\s', $this, 'Say');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!sayme\s', $this, 'SayMe');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!popp\s', $this, 'Popp');
@@ -266,6 +272,42 @@ class Tuersteherin {
         $max = isset($ircdata->messageex[1]) ? $ircdata->messageex[1] : 6;
         $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, '*wuerfel*');
         $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, rand(1, $max));
+    }
+
+    function EightBall(&$irc, &$ircdata) {
+        $answers = array(
+            'Soweit ich sehe, ja.',
+            'Bestimmt.',
+            'So ist es entschieden.',
+            'Ziemlich wahrscheinlich.',
+            'Sieht danach aus.',
+            'Alle Anzeichen weisen darauf hin.',
+            'Ohne Zweifel.',
+            'Ja.',
+            'Ja - definitiv.',
+            'Darauf kannst du dich verlassen.',
+
+            'Truebe Antwort, probier es nochmals.',
+            'Frage nochmals.',
+            'Sage ich dir besser noch nicht.',
+            'Kann ich jetzt noch nicht sagen.',
+            'Konzentriere dich und frage erneut.',
+
+            'Damit kannst du nicht rechnen.',
+            'Meine Antwort ist nein.',
+            'Meine Quellen sagen nein.',
+            'Sieht nicht so gut aus.',
+            'Sehr zweifelhaft.',
+        );
+
+        if($ircdata->messageex[0] == "!8ball" && rand(0, 3) == 0 && $irc->isOpped($ircdata->channel)) {
+            $irc->kick($ircdata->channel, $ircdata->nick, ':o');
+        } else {
+            $question = $this->_message_line($ircdata->message);
+            $answer = IRC_BOLD.$answers[rand(0, count($answers)-1)];
+            $msg = '<'.$ircdata->nick.'>'.(empty($question)?'':' '.$question).' '.$answer;
+            $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, $msg);
+        }
     }
 
     function Ping(&$irc, &$ircdata) {
