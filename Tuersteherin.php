@@ -2,23 +2,23 @@
 <?php
 include("SmartIRC.php");
 
-define("IRC_UNDERLINE", "\001");
 define("IRC_BOLD", "\002");
 define("IRC_ITALIC", "\026");
 define("IRC_NORMAL", "\017");
+define("IRC_UNDERLINE", "\037");
 
 class Tuersteherin {
 
     private $SmartIRC;
 
-    const Nickname = "Dagobert";
-    const Realname = "Dagobert Duck";
+    const Nickname = "Tuersteherin";
+    const Realname = "Heiliges weibliches Wesen des #whf, Version 2.0";
     
     const Server   = "irc.euirc.net";
     const Port     = 6667;
     const Channels = '#whf';
 
-    const IdleTimeout = 0;
+    const IdleTimeout = 600;
    
     private $LoggedIn = array();
     private $idleTime = array();
@@ -46,7 +46,8 @@ class Tuersteherin {
         $irc->setChannelSyncing(true);
         $irc->setUserSyncing(true);
         $irc->setAutoReconnect(true);
-        $irc->setDebug(SMARTIRC_DEBUG_ALL);
+
+        $irc->setDebug(SMARTIRC_DEBUG_IRCMESSAGES);
 
         setlocale(LC_ALL, 'de_DE');
 
@@ -75,13 +76,15 @@ class Tuersteherin {
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!?ping(\?|!|\.)?$', $this, 'Ping');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '/[-+]?[0-9]*[.,]?[0-9]+\s?chf/i', $this, 'CHFtoEUR');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!(time|date)(\s|$)', $this, 'Time');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '/(https?:\/\/([-\w\.]+)+(:\d+)?(\/([\w\/_\-\.]*(\?\S+)?)?)?)/', $this, 'grepURLTitle');
 
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '.*', $this, 'simpleKeywords');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '!.+\s', $this, 'searchEngine');
 
         $irc->connect(self::Server, self::Port);
-        $irc->login(self::Nickname, self::Realname);
-        $irc->join(explode('|', self::Channels));
+        $irc->login(self::Nickname, self::Realname, 0, self::Nickname);
+
+        $this->LateLogin = $irc->registerTimehandler(5000, $this, 'lateLogin');
 
         if(self::IdleTimeout > 0) {
             $irc->registerTimehandler(5000, $this, 'checkIdle');
@@ -120,8 +123,23 @@ class Tuersteherin {
         }
     }
 
+    function lateLogin(&$irc) {
+        if(is_readable("Nickserv.txt")) {
+            $passwd = trim(file_get_contents("Nickserv.txt"));
+            $irc->message(SMARTIRC_TYPE_QUERY, "NickServ", 'GHOST '.self::Nickname.' '.$passwd, SMARTIRC_HIGH);
+            $irc->changeNick(self::Nickname, SMARTIRC_HIGH); /* just to be sure */
+            $irc->message(SMARTIRC_TYPE_QUERY, "NickServ", 'IDENTIFY '.$passwd, SMARTIRC_HIGH);
+        }
+
+        $irc->join(explode('|', self::Channels));
+
+        $irc->unregisterTimeID($this->LateLogin);
+        unset($this->LateLogin);
+    }
+
     function checkIdle(&$irc) {
         foreach(explode('|', self::Channels) as $channel) {
+            if(!$irc->isJoined($channel)) continue;
             $idleList = array();
             foreach($irc->getChannel($channel)->voices as $user=>$isVoiced) {
                 $uuid = $this->getUUID($user);
@@ -278,22 +296,22 @@ class Tuersteherin {
         $answers = array(
             'Soweit ich sehe, ja.',
             'Bestimmt.',
-            'So ist es entschieden.',
+            'Wurde so entschieden.',
             'Ziemlich wahrscheinlich.',
             'Sieht danach aus.',
             'Alle Anzeichen weisen darauf hin.',
-            'Ohne Zweifel.',
+            'Ohne jeden Zweifel.',
             'Ja.',
             'Ja - definitiv.',
             'Darauf kannst du dich verlassen.',
 
-            'Truebe Antwort, probier es nochmals.',
+            'Keine genaue Antwort, probier es nochmals.',
             'Frage nochmals.',
             'Sage ich dir besser noch nicht.',
             'Kann ich jetzt noch nicht sagen.',
             'Konzentriere dich und frage erneut.',
 
-            'Damit kannst du nicht rechnen.',
+            'Wuerde mich nicht darauf verlassen.',
             'Meine Antwort ist nein.',
             'Meine Quellen sagen nein.',
             'Sieht nicht so gut aus.',
@@ -356,6 +374,22 @@ class Tuersteherin {
         $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, $msg);
     }
 
+    function grepURLTitle(&$irc, &$ircdata) {
+        preg_match("@(?<url>https?://([-\w\.]+)+(:\d+)?(/([\w/_\-\.]*(\?\S+)?)?)?)@", $ircdata->message, $url);
+
+        $url = $url['url'];
+        if(!($httpSocket = @fopen($url, 'r'))) {
+            return;
+        }
+        stream_set_timeout($httpSocket, 1);
+        $data = stream_get_contents($httpSocket, 512);
+
+        if(preg_match("/\<title\>(?<header>.*)\<\/title\>/i", $data, $tags)) {
+            $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, 'Link-Titel: '.IRC_UNDERLINE.$tags['header']);
+        }
+        fclose($httpSocket); 
+    }
+
     function _message_line($message, $fallback = '') {
         @list($cmd, $line) = explode(' ', $message, 2);
         $line = (is_null($line)) ? $fallback : $line;
@@ -364,8 +398,6 @@ class Tuersteherin {
 
 }
 
-//preg_match("/(?<value>[0-9]*(\.|,)?[0-9]+)\s?chf/i", "52 chf", $value);
-//var_dump($value);
 $T = new Tuersteherin();
 
 ?>
