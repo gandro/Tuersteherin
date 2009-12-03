@@ -77,6 +77,7 @@ class Tuersteherin {
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '/[-+]?[0-9]*[.,]?[0-9]+\s?chf/i', $this, 'CHFtoEUR');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '^!(time|date)(\s|$)', $this, 'Time');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '/(https?:\/\/([-\w\.]+)+(:\d+)?(\/([\w\/_\-\.]*(\?\S+)?)?)?)/', $this, 'grepURLTitle');
+        $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, 'http:\/\/(www\.)?youtube\.com\/watch\?v=([\w\_\-]+)', $this, 'printYTInfo');
 
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '.*', $this, 'simpleKeywords');
         $irc->registerActionhandler(SMARTIRC_TYPE_CHANNEL, '!.+\s', $this, 'searchEngine');
@@ -382,12 +383,33 @@ class Tuersteherin {
             return;
         }
         stream_set_timeout($httpSocket, 1);
-        $data = stream_get_contents($httpSocket, 512);
+        $data = stream_get_contents($httpSocket, 2048);
 
         if(preg_match("/\<title\>(?<header>.*)\<\/title\>/i", $data, $tags)) {
             $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, 'Link-Titel: '.IRC_UNDERLINE.$tags['header']);
         }
         fclose($httpSocket); 
+    }
+
+    function printYTInfo(&$irc, &$ircdata) {
+        preg_match('/http:\/\/(www\.)?youtube\.com\/watch\?v=(?<id>[\w\_\-]+)/', $ircdata->message, $yt);
+        $sxml = simplexml_load_file('http://gdata.youtube.com/feeds/api/videos/'.$yt['id']);
+        if($sxml === false) return;
+        $title = $sxml->title;
+        $author = $sxml->author->name;
+
+
+        $duration = $sxml->children('http://search.yahoo.com/mrss/');
+        $duration = $duration->children('http://gdata.youtube.com/schemas/2007');
+        $duration = $duration->duration->attributes()->seconds;
+
+        $min = (int) ($duration / 60);
+        $sec = sprintf("%02d", $duration % 60);
+
+        $msg = IRC_BOLD."Titel: ".IRC_NORMAL.$title." | ".
+               IRC_BOLD."Laenge: ".IRC_NORMAL.$min.':'.$sec." | ".
+               IRC_BOLD."Uploader: ".IRC_NORMAL.$author;
+        $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, $msg);
     }
 
     function _message_line($message, $fallback = '') {
