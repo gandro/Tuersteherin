@@ -14,9 +14,9 @@ class Tuersteherin {
     const Nickname = "Tuersteherin";
     const Realname = "Heiliges weibliches Wesen des #whf, Version 2.0";
     
-    const Server   = "irc.euirc.net";
+    const Server   = "irc.rizon.net";
     const Port     = 6667;
-    const Channels = '#whf';
+    const Channels = '#winhistory';
 
     const IdleTimeout = 600;
    
@@ -33,11 +33,10 @@ class Tuersteherin {
     );
 
     private $searchEngines = array(
-        'google' => 'http://www.google.de/search?q=',
-        'googlepic' => 'http://www.google.de/images?q=',
-        'lmgtfy' => 'http://lmgtfy.com/?q=',
-        'wikipedia' => 'http://de.wikipedia.org/w/index.php?title=Spezial:Suche&search=',
-        'whfsearch' => 'http://www.winhistory-forum.net/search.php?do=process&q='
+        '!google' => 'http://www.google.de/search?q=',
+        '!googlepic' => 'http://www.google.de/images?q=',
+        '!lmgtfy' => 'http://lmgtfy.com/?q=',
+        '!wikipedia' => 'http://de.wikipedia.org/w/index.php?title=Spezial:Suche&search=',
     );
 
     function Tuersteherin() {
@@ -115,9 +114,10 @@ class Tuersteherin {
         $timestamps = &$this->idleTime[$ircdata->channel][$uuid];
         $timestamps[0] = microtime(true);
         
-        if(self::IdleTimeout != 0 && !$irc->isVoiced($ircdata->channel, $ircdata->nick)) {
+# I personally don't want every user to be autovoiced.
+/*        if(self::IdleTimeout != 0 && !$irc->isVoiced($ircdata->channel, $ircdata->nick)) { 
             $irc->voice($ircdata->channel, $ircdata->nick);
-        }
+        }*/
         
         if($timestamps[0] - $timestamps[3] < 2) {
             $irc->kick($ircdata->channel, $ircdata->nick, "Fluten des Kanals verboten!"); 
@@ -152,8 +152,9 @@ class Tuersteherin {
                 }   
             }
 
+# -v them if idling. Since they don't have +v (in my chan), it's quite pointless.
             if(count($idleList) > 0) {
-                $irc->mode($channel, '-'.str_repeat('v', count($idleList)).' '.implode(' ', $idleList));
+#                $irc->mode($channel, '-'.str_repeat('v', count($idleList)).' '.implode(' ', $idleList));
             }
         }
     }
@@ -349,8 +350,8 @@ class Tuersteherin {
     }
 
     function searchEngine(&$irc, &$ircdata) {
-        if(isset($this->searchEngines['!'.$ircdata->messageex[0]])) {
-            $query = $this->searchEngines['!'.$ircdata->messageex[0]].
+        if(isset($this->searchEngines[''.$ircdata->messageex[0]])) {
+            $query = $this->searchEngines[''.$ircdata->messageex[0]].
                                 urlencode($this->_message_line($ircdata->message));
             $irc->message(SMARTIRC_TYPE_CHANNEL, $ircdata->channel, '-> '.$query);
         }
